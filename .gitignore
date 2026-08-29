@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Production build artifacts and coverage
+build/
+dist/
+coverage/
+
+# Environment files (keep example templates)
+.env.local
+.env
+.env.*
+!.env.example
+AGENTS.md
+CLAUDE.md
+
+# Logs
+*.log
+npm-debug.log*
+
+# TypeScript and tooling caches
+*.tsbuildinfo
+.eslintcache
+.cache/
+
+# Hosting
+.vercel/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
