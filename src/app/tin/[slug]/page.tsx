@@ -87,8 +87,13 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
 
       <main className="container article-layout">
         <article className="article-detail">
-          <nav className="article-breadcrumb" aria-label="Đường dẫn"><Link href="/">Trang chủ</Link><span>/</span><span>{article.category.name}</span></nav>
-          <span className="article-category">{article.region === "world" ? "Thế giới" : "Việt Nam"} · {article.category.name}</span>
+          <nav className="article-breadcrumb" aria-label="Đường dẫn">
+            <Link href="/">Trang chủ</Link>
+            <span>/</span>
+            <span>{article.region === "world" ? "Thế giới" : "Việt Nam"}</span>
+            <span>/</span>
+            <span className="breadcrumb-current">{article.category.name}</span>
+          </nav>
           <h1>{article.title}</h1>
           <p className="article-lead">{article.summary}</p>
           <div className="article-meta">
