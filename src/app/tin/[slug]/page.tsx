@@ -2,6 +2,10 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Clock3, Eye, Radio, ShieldCheck } from "lucide-react";
+import sanitizeHtml from "sanitize-html";
+import ArticleActions from "@/components/ArticleActions";
+import CommentsSection from "@/components/CommentsSection";
+import ReadingProgress from "@/components/ReadingProgress";
 import { ApiError, Article, getArticleBySlug, getRelatedArticles, proxiedImageUrl } from "@/lib/api";
 
 type ArticlePageProps = { params: Promise<{ slug: string }> };
@@ -41,17 +45,29 @@ function formatDate(value: string | null): string {
   }
 }
 
-function contentParagraphs(content: string): string[] {
-  try {
-    return content
-      .replace(/<\/?(?:p|div|h[1-6]|li|blockquote|br)[^>]*>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-      .split(/\n+/)
-      .map((paragraph) => paragraph.trim())
-      .filter(Boolean);
-  } catch {
-    return [content];
-  }
+function sanitizedArticleHtml(content: string): string {
+  return sanitizeHtml(content, {
+    allowedTags: [
+      "p", "br", "h2", "h3", "h4", "h5", "h6", "blockquote", "ul", "ol", "li",
+      "strong", "b", "em", "i", "u", "s", "a", "figure", "figcaption", "img", "hr",
+    ],
+    allowedAttributes: {
+      a: ["href", "title", "target", "rel"],
+      img: ["src", "alt", "title", "width", "height", "loading"],
+    },
+    allowedSchemes: ["http", "https", "mailto"],
+    allowedSchemesByTag: { img: ["http", "https"] },
+    transformTags: {
+      a: (_tagName, attribs) => ({
+        tagName: "a",
+        attribs: { ...attribs, target: "_blank", rel: "noopener noreferrer" },
+      }),
+      img: (_tagName, attribs) => ({
+        tagName: "img",
+        attribs: { ...attribs, loading: "lazy" },
+      }),
+    },
+  });
 }
 
 async function loadArticle(slug: string): Promise<{ article: Article; related: Article[] }> {
@@ -74,14 +90,25 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
     throw error;
   }
   const { article, related } = result;
-  const paragraphs = contentParagraphs(article.content);
+  const articleHtml = sanitizedArticleHtml(article.content);
 
   return (
     <div className="article-shell">
+      <ReadingProgress />
       <header className="article-header">
         <div className="container article-header-inner">
           <Link className="brand" href="/"><span className="brand-mark"><Radio aria-hidden="true" /></span><span className="brand-copy"><strong>Nhịp Tin</strong><small>Hiểu ngày mới</small></span></Link>
-          <Link className="back-link" href="/"><ArrowLeft aria-hidden="true" /> Trở về trang chủ</Link>
+          <div className="article-header-tools">
+            <ArticleActions
+              id={article.id}
+              title={article.title}
+              slug={article.slug}
+              categoryName={article.category.name}
+              publishedAt={article.publishedAt}
+              readingTimeMinutes={article.readingTimeMinutes}
+            />
+            <Link className="back-link" href="/"><ArrowLeft aria-hidden="true" /> Trở về trang chủ</Link>
+          </div>
         </div>
       </header>
 
@@ -102,18 +129,19 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
             <time>{formatDate(article.publishedAt)}</time>
           </div>
           {proxiedImageUrl(article.thumbnailUrl) ? <img className="article-cover" src={proxiedImageUrl(article.thumbnailUrl) ?? undefined} alt={article.title} /> : <div className="article-cover article-cover-placeholder"><Radio aria-hidden="true" /></div>}
-          <div className="article-body">{paragraphs.map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 24)}`}>{paragraph}</p>)}</div>
+          <div className="article-body" dangerouslySetInnerHTML={{ __html: articleHtml }} />
           <footer className="article-source">
             <ShieldCheck aria-hidden="true" />
             <div><strong>Nguồn: {article.source?.name ?? "Nhịp Tin"}</strong><p>Tóm tắt từ RSS chính thức; nội dung đầy đủ và bản quyền thuộc nguồn xuất bản.</p>{article.originalUrl && <a href={article.originalUrl} target="_blank" rel="noreferrer">Xem nguồn gốc</a>}</div>
           </footer>
           {(article.tags?.length ?? 0) > 0 && <div className="article-tags">{article.tags?.map((tag) => <span key={tag.id}># {tag.name}</span>)}</div>}
+          <CommentsSection articleId={article.id} allowComments={article.allowComments} />
         </article>
 
         {related.length > 0 && (
           <aside className="related-news">
             <span className="section-kicker">Đọc tiếp</span><h2>Tin liên quan</h2>
-            {related.map((item) => <Link href={`/tin/${encodeURIComponent(item.slug)}`} key={item.id}><span>{item.category.name}</span><h3>{item.title}</h3><small>{item.readingTimeMinutes} phút đọc</small></Link>)}
+            {related.map((item) => <Link href={`/tin/${encodeURIComponent(item.slug)}`} key={item.id}>{proxiedImageUrl(item.thumbnailUrl) && <img src={proxiedImageUrl(item.thumbnailUrl) ?? undefined} alt="" loading="lazy" />}<span>{item.category.name}</span><h3>{item.title}</h3><small>{item.readingTimeMinutes} phút đọc</small></Link>)}
           </aside>
         )}
       </main>

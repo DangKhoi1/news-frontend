@@ -59,6 +59,23 @@ export type PaginatedResult<T> = {
   totalPages: number;
 };
 
+export type CommentAuthor = {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+};
+
+export type ArticleComment = {
+  id: string;
+  content: string;
+  articleId: string;
+  parentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  user: CommentAuthor;
+  replies: ArticleComment[];
+};
+
 type ApiEnvelope<T> = {
   success: boolean;
   message: string;
@@ -203,6 +220,34 @@ export async function getRelatedArticles(
   } catch (error: unknown) {
     throw error;
   }
+}
+
+export async function getArticleComments(
+  articleId: string,
+  page = 1,
+  limit = 10,
+  signal?: AbortSignal,
+): Promise<PaginatedResult<ArticleComment>> {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  return apiRequest<PaginatedResult<ArticleComment>>(
+    `/comments/article/${encodeURIComponent(articleId)}?${params.toString()}`,
+    { signal, cache: "no-store" },
+  );
+}
+
+export async function createArticleComment(
+  articleId: string,
+  content: string,
+  accessToken: string,
+): Promise<ArticleComment> {
+  return apiRequest<ArticleComment>(
+    `/comments/article/${encodeURIComponent(articleId)}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ content }),
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
 }
 
 export async function subscribeNewsletter(email: string): Promise<string> {

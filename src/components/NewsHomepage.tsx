@@ -120,6 +120,10 @@ export default function NewsHomepage() {
   const [search, setSearch] = useState("");
   const [activeTopic, setActiveTopic] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loadMoreError, setLoadMoreError] = useState("");
   const [error, setError] = useState("");
   const [savedArticles, setSavedArticles] = useState<SavedArticleMeta[]>([]);
   const [savedDrawerOpen, setSavedDrawerOpen] = useState(false);
@@ -141,14 +145,30 @@ export default function NewsHomepage() {
     }
   }, []);
 
-  // Sync dark theme
+  // Restore the persisted theme (or the operating-system preference) on mount.
   useEffect(() => {
     try {
-      document.documentElement.dataset.theme = dark ? "dark" : "light";
+      const storedTheme = localStorage.getItem("nhiptin_theme");
+      const shouldUseDark = storedTheme
+        ? storedTheme === "dark"
+        : window.matchMedia("(prefers-color-scheme: dark)").matches;
+      setDark(shouldUseDark);
+      document.documentElement.dataset.theme = shouldUseDark ? "dark" : "light";
     } catch {
       // ignore
     }
-  }, [dark]);
+  }, []);
+
+  function toggleTheme(): void {
+    const nextDark = !dark;
+    setDark(nextDark);
+    try {
+      document.documentElement.dataset.theme = nextDark ? "dark" : "light";
+      localStorage.setItem("nhiptin_theme", nextDark ? "dark" : "light");
+    } catch {
+      // The visual state still updates when storage is unavailable.
+    }
+  }
 
   // Fetch articles and categories
   useEffect(() => {
@@ -161,6 +181,7 @@ export default function NewsHomepage() {
         const [articleResult, categoryResult, trendingResult] = await Promise.all([
           getArticles(
             {
+              page: 1,
               limit: 24,
               search: search || undefined,
               categorySlug: activeCategory === "all" ? undefined : activeCategory,
@@ -172,6 +193,9 @@ export default function NewsHomepage() {
           getTrending(10, controller.signal),
         ]);
         setArticles(articleResult.items);
+        setCurrentPage(articleResult.page);
+        setTotalPages(articleResult.totalPages);
+        setLoadMoreError("");
         setCategories(categoryResult.filter((category) => category.isActive));
         setTrending(trendingResult);
       } catch (loadError: unknown) {
@@ -184,6 +208,32 @@ export default function NewsHomepage() {
     void loadNews();
     return () => controller.abort();
   }, [activeCategory, activeNav, reloadKey, search]);
+
+  async function loadMoreArticles(): Promise<void> {
+    if (loadingMore || currentPage >= totalPages) return;
+    try {
+      setLoadingMore(true);
+      setLoadMoreError("");
+      const region = activeNav === "Việt Nam" ? "vietnam" : activeNav === "Thế giới" ? "world" : undefined;
+      const result = await getArticles({
+        page: currentPage + 1,
+        limit: 24,
+        search: search || undefined,
+        categorySlug: activeCategory === "all" ? undefined : activeCategory,
+        region,
+      });
+      setArticles((current) => {
+        const ids = new Set(current.map((item) => item.id));
+        return [...current, ...result.items.filter((item) => !ids.has(item.id))];
+      });
+      setCurrentPage(result.page);
+      setTotalPages(result.totalPages);
+    } catch (loadError: unknown) {
+      setLoadMoreError(loadError instanceof Error ? loadError.message : "Không thể tải thêm bài viết");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   // Handle Bookmark Toggle
   function toggleSaved(article: Article): void {
@@ -297,6 +347,7 @@ export default function NewsHomepage() {
     eventArticles,
     perspectiveLead,
     perspectiveSupporting,
+    moreArticles,
   } = useMemo(() => {
     const usedIds = new Set<string>();
 
@@ -368,6 +419,12 @@ export default function NewsHomepage() {
 
     const pLead = sortedPerspective[0];
     const pSupporting = sortedPerspective.slice(1, 4);
+    const highlightedIds = new Set(
+      [main, ...side, ...briefs, ...latest, ...events, pLead, ...pSupporting]
+        .filter((item): item is Article => Boolean(item))
+        .map((item) => item.id),
+    );
+    const more = articles.filter((item) => !highlightedIds.has(item.id));
 
     return {
       breakingArticle: breaking,
@@ -378,6 +435,7 @@ export default function NewsHomepage() {
       eventArticles: events,
       perspectiveLead: pLead,
       perspectiveSupporting: pSupporting,
+      moreArticles: more,
     };
   }, [articles, trending, activeTopic]);
 
@@ -425,7 +483,7 @@ export default function NewsHomepage() {
             <button
               className="theme-button"
               type="button"
-              onClick={() => setDark((value) => !value)}
+              onClick={toggleTheme}
               aria-label={dark ? "Bật giao diện sáng" : "Bật giao diện tối"}
             >
               {dark ? <Sun /> : <Moon />}
@@ -833,6 +891,58 @@ export default function NewsHomepage() {
                 </div>
               </div>
             </div>
+          </section>
+        )}
+
+        {(moreArticles.length > 0 || currentPage < totalPages) && (
+          <section className="container more-news" aria-labelledby="more-news-heading">
+            <div className="section-heading">
+              <div>
+                <span className="section-kicker"><Radio aria-hidden="true" /> Cập nhật liên tục</span>
+                <h2 id="more-news-heading">Thêm tin mới</h2>
+              </div>
+              <p>Trang {currentPage} / {totalPages}</p>
+            </div>
+            {moreArticles.length > 0 && (
+              <div className="more-news-grid">
+                {moreArticles.map((item) => (
+                  <article className="more-news-card" key={`more-${item.id}`}>
+                    <Link className="more-news-image" href={articleHref(item)}>
+                      {proxiedImageUrl(item.thumbnailUrl) ? (
+                        <img src={proxiedImageUrl(item.thumbnailUrl) ?? undefined} alt="" loading="lazy" />
+                      ) : (
+                        <Radio aria-hidden="true" />
+                      )}
+                    </Link>
+                    <div>
+                      <span className="eyebrow">{item.category.name}</span>
+                      <h3><Link href={articleHref(item)}>{item.title}</Link></h3>
+                      <p>{item.summary}</p>
+                      <div className="more-news-meta">
+                        <span>{formatAgo(item.publishedAt)} · {item.readingTimeMinutes} phút đọc</span>
+                        <SaveButton
+                          article={item}
+                          isSaved={savedArticles.some((saved) => saved.id === item.id)}
+                          onToggle={toggleSaved}
+                        />
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+            {loadMoreError && <p className="load-more-error" role="alert">{loadMoreError}</p>}
+            {currentPage < totalPages && (
+              <button
+                className="load-more-button"
+                type="button"
+                onClick={() => void loadMoreArticles()}
+                disabled={loadingMore}
+              >
+                {loadingMore ? "Đang tải thêm…" : "Tải thêm bài viết"}
+                {!loadingMore && <ArrowRight aria-hidden="true" />}
+              </button>
+            )}
           </section>
         )}
 
